@@ -6,7 +6,7 @@ import test2
 import backtrace
 
 
-backtrace.rehook(reverse=True, align=False)
+backtrace.rehook(reverse=False, align=True, strip_path=True)
 
 
 class MyClass(object):

@@ -1,5 +1,6 @@
 import sys
 import traceback
+from os.path import basename
 
 import colorama
 from colorama import Fore, Style
@@ -11,8 +12,6 @@ from colorama import Fore, Style
 def _flush_message(message):
     """Flush the message to stdout.
     """
-    # TODO: Since these are exceptions, it probably makes more sense
-    # to print to stderr
     sys.stderr.write(message + '\n')
     sys.stderr.flush()
 
@@ -42,69 +41,72 @@ class Hook(object):
     def __init__(self,
                  entries,
                  align=False,
-                 flow_only=False):
+                 flow_only=False,
+                 strip_path=False):
         self.entries = entries
         self._align = align
+        self._strip = strip_path
 
     def reverse(self):
         self.entries = self.entries[::-1]
 
     def generate_backtrace(self):
-        file_formatting = Style.DIM
-        line_formatting = Fore.RED + Style.BRIGHT
-        context_formatting = Fore.GREEN
-        call_formatting = Fore.YELLOW + ' --> '
+        file_format = Style.DIM
+        line_format = Fore.RED + Style.BRIGHT
+        context_format = Fore.GREEN
+        call_format = Fore.YELLOW + ' --> '
 
-        self.style_lengths = [
-            len(file_formatting),
-            len(line_formatting),
-            len(context_formatting),
-            len(call_formatting)
-        ]
-        lengths = self._set_alignment() if \
+        rebuilt_traceback = []
+        for entry in self.entries:
+            rebuilt_traceback.append((
+                file_format + basename(entry[0]) if self._strip else entry[0],
+                line_format + str(entry[1]),
+                context_format + _name_module(entry[2]),
+                call_format + entry[3]))
+
+        lengths = self._set_alignment(rebuilt_traceback) if \
             self._align else [1, 1, 1, 1]
 
         backtrace_entries = []
 
-        for entry in self.entries:
-            file = file_formatting + entry[0]
-            line = line_formatting + str(entry[1])
-            context = context_formatting + _name_module(entry[2])
-            call = call_formatting + entry[3]
+        for entry in rebuilt_traceback:
             backtrace_entries.append(
                 '{0:{1}} {2:{3}} {4:{5}} {6:{7}}'.format(
-                    file, lengths[0],
-                    line, lengths[1],
-                    context, lengths[2],
-                    call, lengths[3]))
+                    entry[0], lengths[0],
+                    entry[1], lengths[1],
+                    entry[2], lengths[2],
+                    entry[3], lengths[3]))
         return backtrace_entries
 
-    def _set_alignment(self):
+    def _set_alignment(self, entries):
         lengths = [0, 0, 0, 0]
 
-        for entry in self.entries:
+        for entry in entries:
             for index, field in enumerate(entry):
-                lengths[index] = max(
-                    lengths[index],
-                    len(str(entry[index])) + self.style_lengths[index])
+                lengths[index] = max(lengths[index], len(str(entry[index])))
         return lengths
 
 
 def rehook(reverse=False,
            flow_only=False,
-           align=False):
+           align=False,
+           strip_path=False):
 
     colorama.init(autoreset=True)
 
     def new_excepthook(tpe, value, tb):
         traceback_entries = traceback.extract_tb(tb)
-        hook = Hook(traceback_entries, align=align)
+        hook = Hook(traceback_entries, align=align, strip_path=strip_path)
 
+        _flush_message(Fore.YELLOW + 'Traceback: ({0})'.format(
+            'Most recent call first' if reverse
+            else 'Most recent call last'))
         main_message = '{0}{1}{2}: {3}'.format(
             Fore.RED,
             Style.BRIGHT,
-            tpe.__name__ + ': ',
+            tpe.__name__,
             str(value))
+
         if reverse:
             hook.reverse()
         backtrace = hook.generate_backtrace()
